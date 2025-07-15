@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Wallet, Zap, Play, Pause, RotateCcw, Copy, Gauge, Trophy } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Wallet, Zap, Play, Pause, RotateCcw, Copy, Gauge, Trophy, Users } from 'lucide-react';
+import { Link, useSearchParams } from 'react-router-dom';
 import monadLogo from '@/assets/monad-logo.png';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { useWallet } from '@/hooks/useWallet';
-import MobileControls from '@/components/MobileControls';
+import { useMultiplayer } from '@/hooks/useMultiplayer';
+import JoystickControl from '@/components/JoystickControl';
+import RoomManager from '@/components/RoomManager';
+import MultiplayerSnakeGame from '@/components/MultiplayerSnakeGame';
 
 interface Position {
   x: number;
@@ -35,6 +38,9 @@ const FAUCET_COOLDOWN = 30 * 60 * 1000; // 30 minutes in milliseconds
 const Index = () => {
   const { toast } = useToast();
   const wallet = useWallet();
+  const [searchParams, setSearchParams] = useSearchParams();
+  
+  // Single player state
   const [snake, setSnake] = useState<Position[]>(INITIAL_SNAKE);
   const [direction, setDirection] = useState<Position>({ x: 0, y: -1 });
   const [balls, setBalls] = useState<Ball[]>([]);
@@ -44,6 +50,30 @@ const Index = () => {
   const [gameSpeed, setGameSpeed] = useState<keyof typeof SPEED_SETTINGS>('Low 1X');
   const [showFirstTimeHint, setShowFirstTimeHint] = useState(false);
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Multiplayer state
+  const [currentRoom, setCurrentRoom] = useState<string | null>(null);
+  const [isMultiplayer, setIsMultiplayer] = useState(false);
+  const [playerId] = useState(() => Math.random().toString(36).substr(2, 9));
+  
+  // Initialize multiplayer if room in URL
+  useEffect(() => {
+    const roomFromUrl = searchParams.get('room');
+    if (roomFromUrl) {
+      setCurrentRoom(roomFromUrl);
+      setIsMultiplayer(true);
+    }
+  }, [searchParams]);
+  
+  const { 
+    isConnected, 
+    gameState, 
+    isRoomCreator, 
+    startGame: startMultiplayerGame,
+    resetGame: resetMultiplayerGame,
+    changeDirection: changeMultiplayerDirection,
+    cleanup: cleanupMultiplayer
+  } = useMultiplayer(currentRoom);
 
   // Load faucet data from localStorage
   useEffect(() => {
@@ -329,6 +359,32 @@ const Index = () => {
     setDirection(newDirection);
   };
 
+  // Multiplayer functions
+  const handleCreateRoom = () => {
+    const roomId = Math.random().toString(36).substr(2, 9);
+    setCurrentRoom(roomId);
+    setIsMultiplayer(true);
+    setSearchParams({ room: roomId });
+    return roomId;
+  };
+
+  const handleJoinRoom = (roomId: string) => {
+    setCurrentRoom(roomId);
+    setIsMultiplayer(true);
+    setSearchParams({ room: roomId });
+  };
+
+  const handleScoreUpdate = (playerId: string, score: number) => {
+    // Handle score updates for multiplayer
+    if (playerId === playerId) {
+      toast({
+        title: score > 0 ? "Score Updated! 🎯" : "Score Lost! ⚠️",
+        description: `Your score: ${score}`,
+        className: score > 0 ? "border-green-500 bg-green-500/10" : "border-red-500 bg-red-500/10"
+      });
+    }
+  };
+
   const dismissHint = () => {
     setShowFirstTimeHint(false);
     localStorage.setItem('hasSeenArrowHint', 'true');
@@ -394,13 +450,27 @@ const Index = () => {
         </div>
 
         <div className="flex flex-col lg:flex-row gap-6 h-full">
-          {/* Wallet Panel */}
+          {/* Left Panel - Wallet & Multiplayer */}
           <motion.div
-            className="lg:w-80 flex-shrink-0"
+            className="lg:w-80 flex-shrink-0 space-y-4"
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.2 }}
           >
+            {/* Multiplayer Panel */}
+            <RoomManager
+              onCreateRoom={handleCreateRoom}
+              onJoinRoom={handleJoinRoom}
+              currentRoom={currentRoom}
+              isConnected={isConnected}
+              playerCount={Object.keys(gameState.players).length}
+              canStartGame={Object.keys(gameState.players).length === 2}
+              onStartGame={startMultiplayerGame}
+              isRoomCreator={isRoomCreator}
+              roomFull={gameState.roomFull}
+            />
+
+            {/* Wallet Panel */}
             <Card className="bg-black/50 border-purple-500/50 backdrop-blur-md">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-purple-300">
@@ -474,6 +544,40 @@ const Index = () => {
                 )}
               </CardContent>
             </Card>
+
+            {/* Multiplayer Scores */}
+            {isMultiplayer && Object.keys(gameState.players).length > 0 && (
+              <Card className="bg-black/50 border-cyan-500/50 backdrop-blur-md">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2 text-cyan-300">
+                    <Trophy className="w-5 h-5" />
+                    Players
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-2">
+                  {Object.values(gameState.players).map((player) => (
+                    <div 
+                      key={player.id}
+                      className={`flex justify-between items-center p-2 rounded ${
+                        player.id === playerId ? 'bg-purple-600/30 border border-purple-500/50' : 'bg-gray-800/30'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2">
+                        <div 
+                          className="w-4 h-4 rounded-full border-2 border-white/50"
+                          style={{ backgroundColor: player.color }}
+                        />
+                        <span className="text-sm font-mono">
+                          {player.id === playerId ? 'You' : player.id.slice(0, 6)}
+                        </span>
+                        {!player.isAlive && <span className="text-red-400 text-xs">💀</span>}
+                      </div>
+                      <span className="text-cyan-400 font-bold">{player.score}</span>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            )}
           </motion.div>
 
           {/* Game Board */}
@@ -539,107 +643,115 @@ const Index = () => {
 
                 {/* Game Grid */}
                 <div className="flex-1 flex items-center justify-center">
-                  <div 
-                    className="grid bg-black/80 border-2 border-purple-500 rounded-lg p-2"
-                    style={{ 
-                      gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
-                      width: 'min(500px, 80vw)',
-                      height: 'min(500px, 80vw)'
-                    }}
-                  >
-                    {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
-                      const x = index % GRID_SIZE;
-                      const y = Math.floor(index / GRID_SIZE);
-                      
-                      const isSnakeHead = snake[0]?.x === x && snake[0]?.y === y;
-                      const isSnakeBody = snake.slice(1).some(segment => segment.x === x && segment.y === y);
-                      const ball = balls.find(b => b.position.x === x && b.position.y === y);
-                      
-                      return (
-                        <motion.div
-                          key={index}
-                          className={`border border-purple-900/30 relative ${
-                            isSnakeHead 
-                              ? 'bg-gradient-to-r from-cyan-400 to-purple-500 rounded-full shadow-lg shadow-cyan-400/50' 
-                              : isSnakeBody 
-                                ? 'bg-gradient-to-r from-purple-600 to-cyan-600 rounded-sm' 
-                                : ball?.type === 'green'
-                                  ? 'bg-gradient-to-br from-green-400 to-green-600 border-2 border-white/30 shadow-lg shadow-green-400/50'
-                                  : ball?.type === 'damage'
-                                    ? 'bg-gradient-to-br from-red-500 to-red-700 border-2 border-white/30 shadow-lg shadow-red-500/50'
-                                    : 'bg-gray-900/20'
-                          }`}
-                          animate={
-                            isSnakeHead 
-                              ? { scale: [1, 1.1, 1] }
-                              : ball 
-                                ? { scale: [1, 1.1, 1], rotate: [0, 15, -15, 0] }
-                                : {}
-                          }
-                          transition={
-                            isSnakeHead 
-                              ? { duration: 0.3, repeat: Infinity }
-                              : ball
-                                ? { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
-                                : {}
-                          }
-                          style={ball ? {
-                            borderRadius: '25%',
-                            transform: 'rotate(45deg)'
-                          } : {}}
-                        >
-                          {/* Snake Head Eyes */}
-                          {isSnakeHead && (
-                            <>
-                              {/* Eyes positioned based on direction */}
-                              <div className={`absolute flex gap-1 ${
-                                direction.y === -1 ? 'top-1 left-1/2 transform -translate-x-1/2' : // Up
-                                direction.y === 1 ? 'bottom-1 left-1/2 transform -translate-x-1/2' : // Down  
-                                direction.x === -1 ? 'left-1 top-1/2 transform -translate-y-1/2 flex-col' : // Left
-                                'right-1 top-1/2 transform -translate-y-1/2 flex-col' // Right
-                              }`}>
-                                <div className="w-1.5 h-1.5 bg-white rounded-full shadow-inner">
-                                  <div className="w-0.5 h-0.5 bg-red-500 rounded-full mt-0.5 ml-0.5"></div>
-                                </div>
-                                <div className="w-1.5 h-1.5 bg-white rounded-full shadow-inner">
-                                  <div className="w-0.5 h-0.5 bg-red-500 rounded-full mt-0.5 ml-0.5"></div>
-                                </div>
-                              </div>
-                              
-                              {/* Forked tongue */}
-                              <div className={`absolute ${
-                                direction.y === -1 ? 'top-0 left-1/2 transform -translate-x-1/2 -translate-y-1' : // Up
-                                direction.y === 1 ? 'bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1' : // Down
-                                direction.x === -1 ? 'left-0 top-1/2 transform -translate-y-1/2 -translate-x-1' : // Left  
-                                'right-0 top-1/2 transform -translate-y-1/2 translate-x-1' // Right
-                              }`}>
-                                <div className={`relative ${
-                                  direction.y !== 0 ? 'w-1 h-2' : 'w-2 h-1'
+                  {isMultiplayer && currentRoom ? (
+                    <MultiplayerSnakeGame 
+                      roomId={currentRoom}
+                      playerId={playerId}
+                      onScoreUpdate={handleScoreUpdate}
+                    />
+                  ) : (
+                    <div 
+                      className="grid bg-black/80 border-2 border-purple-500 rounded-lg p-2"
+                      style={{ 
+                        gridTemplateColumns: `repeat(${GRID_SIZE}, 1fr)`,
+                        width: 'min(500px, 80vw)',
+                        height: 'min(500px, 80vw)'
+                      }}
+                    >
+                      {Array.from({ length: GRID_SIZE * GRID_SIZE }).map((_, index) => {
+                        const x = index % GRID_SIZE;
+                        const y = Math.floor(index / GRID_SIZE);
+                        
+                        const isSnakeHead = snake[0]?.x === x && snake[0]?.y === y;
+                        const isSnakeBody = snake.slice(1).some(segment => segment.x === x && segment.y === y);
+                        const ball = balls.find(b => b.position.x === x && b.position.y === y);
+                        
+                        return (
+                          <motion.div
+                            key={index}
+                            className={`border border-purple-900/30 relative ${
+                              isSnakeHead 
+                                ? 'bg-gradient-to-r from-cyan-400 to-purple-500 rounded-full shadow-lg shadow-cyan-400/50' 
+                                : isSnakeBody 
+                                  ? 'bg-gradient-to-r from-purple-600 to-cyan-600 rounded-sm' 
+                                  : ball?.type === 'green'
+                                    ? 'bg-gradient-to-br from-green-400 to-green-600 border-2 border-white/30 shadow-lg shadow-green-400/50'
+                                    : ball?.type === 'damage'
+                                      ? 'bg-gradient-to-br from-red-500 to-red-700 border-2 border-white/30 shadow-lg shadow-red-500/50'
+                                      : 'bg-gray-900/20'
+                            }`}
+                            animate={
+                              isSnakeHead 
+                                ? { scale: [1, 1.1, 1] }
+                                : ball 
+                                  ? { scale: [1, 1.1, 1], rotate: [0, 15, -15, 0] }
+                                  : {}
+                            }
+                            transition={
+                              isSnakeHead 
+                                ? { duration: 0.3, repeat: Infinity }
+                                : ball
+                                  ? { duration: 1.5, repeat: Infinity, ease: "easeInOut" }
+                                  : {}
+                            }
+                            style={ball ? {
+                              borderRadius: '25%',
+                              transform: 'rotate(45deg)'
+                            } : {}}
+                          >
+                            {/* Snake Head Eyes */}
+                            {isSnakeHead && (
+                              <>
+                                {/* Eyes positioned based on direction */}
+                                <div className={`absolute flex gap-1 ${
+                                  direction.y === -1 ? 'top-1 left-1/2 transform -translate-x-1/2' : // Up
+                                  direction.y === 1 ? 'bottom-1 left-1/2 transform -translate-x-1/2' : // Down  
+                                  direction.x === -1 ? 'left-1 top-1/2 transform -translate-y-1/2 flex-col' : // Left
+                                  'right-1 top-1/2 transform -translate-y-1/2 flex-col' // Right
                                 }`}>
-                                  <div className={`absolute bg-red-400 ${
-                                    direction.y === -1 ? 'w-0.5 h-1.5 left-0 rounded-t-sm' : // Up left
-                                    direction.y === -1 ? 'w-0.5 h-1.5 right-0 rounded-t-sm' : // Up right
-                                    direction.y === 1 ? 'w-0.5 h-1.5 left-0 rounded-b-sm' : // Down left
-                                    direction.y === 1 ? 'w-0.5 h-1.5 right-0 rounded-b-sm' : // Down right
-                                    direction.x === -1 ? 'w-1.5 h-0.5 top-0 rounded-l-sm' : // Left top
-                                    direction.x === -1 ? 'w-1.5 h-0.5 bottom-0 rounded-l-sm' : // Left bottom
-                                    direction.x === 1 ? 'w-1.5 h-0.5 top-0 rounded-r-sm' : // Right top
-                                    'w-1.5 h-0.5 bottom-0 rounded-r-sm' // Right bottom
-                                  }`}></div>
-                                  <div className={`absolute bg-red-400 ${
-                                    direction.y === -1 ? 'w-0.5 h-1.5 right-0 rounded-t-sm' :
-                                    direction.y === 1 ? 'w-0.5 h-1.5 right-0 rounded-b-sm' :
-                                    direction.x === -1 ? 'w-1.5 h-0.5 bottom-0 rounded-l-sm' :
-                                    'w-1.5 h-0.5 bottom-0 rounded-r-sm'
-                                  }`}></div>
+                                  <div className="w-1.5 h-1.5 bg-white rounded-full shadow-inner">
+                                    <div className="w-0.5 h-0.5 bg-red-500 rounded-full mt-0.5 ml-0.5"></div>
+                                  </div>
+                                  <div className="w-1.5 h-1.5 bg-white rounded-full shadow-inner">
+                                    <div className="w-0.5 h-0.5 bg-red-500 rounded-full mt-0.5 ml-0.5"></div>
+                                  </div>
                                 </div>
-                              </div>
-                            </>
-                          )}
-                        </motion.div>
-                      );
-                    })}
-                  </div>
+                                
+                                {/* Forked tongue */}
+                                <div className={`absolute ${
+                                  direction.y === -1 ? 'top-0 left-1/2 transform -translate-x-1/2 -translate-y-1' : // Up
+                                  direction.y === 1 ? 'bottom-0 left-1/2 transform -translate-x-1/2 translate-y-1' : // Down
+                                  direction.x === -1 ? 'left-0 top-1/2 transform -translate-y-1/2 -translate-x-1' : // Left  
+                                  'right-0 top-1/2 transform -translate-y-1/2 translate-x-1' // Right
+                                }`}>
+                                  <div className={`relative ${
+                                    direction.y !== 0 ? 'w-1 h-2' : 'w-2 h-1'
+                                  }`}>
+                                    <div className={`absolute bg-red-400 ${
+                                      direction.y === -1 ? 'w-0.5 h-1.5 left-0 rounded-t-sm' : // Up left
+                                      direction.y === -1 ? 'w-0.5 h-1.5 right-0 rounded-t-sm' : // Up right
+                                      direction.y === 1 ? 'w-0.5 h-1.5 left-0 rounded-b-sm' : // Down left
+                                      direction.y === 1 ? 'w-0.5 h-1.5 right-0 rounded-b-sm' : // Down right
+                                      direction.x === -1 ? 'w-1.5 h-0.5 top-0 rounded-l-sm' : // Left top
+                                      direction.x === -1 ? 'w-1.5 h-0.5 bottom-0 rounded-l-sm' : // Left bottom
+                                      direction.x === 1 ? 'w-1.5 h-0.5 top-0 rounded-r-sm' : // Right top
+                                      'w-1.5 h-0.5 bottom-0 rounded-r-sm' // Right bottom
+                                    }`}></div>
+                                    <div className={`absolute bg-red-400 ${
+                                      direction.y === -1 ? 'w-0.5 h-1.5 right-0 rounded-t-sm' :
+                                      direction.y === 1 ? 'w-0.5 h-1.5 right-0 rounded-b-sm' :
+                                      direction.x === -1 ? 'w-1.5 h-0.5 bottom-0 rounded-l-sm' :
+                                      'w-1.5 h-0.5 bottom-0 rounded-r-sm'
+                                    }`}></div>
+                                  </div>
+                                </div>
+                              </>
+                            )}
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </div>
 
                 {/* Game Controls Help */}
@@ -647,12 +759,12 @@ const Index = () => {
                   <div>Use WASD, Arrow Keys, or click the controls below to start and move</div>
                 </div>
 
-                {/* Arrow Controls */}
-                <MobileControls 
-                  onDirectionChange={handleMobileDirectionChange}
-                  gameRunning={gameRunning}
-                  currentDirection={direction}
-                  onStartGame={startGame}
+                {/* Joystick Controls */}
+                <JoystickControl 
+                  onDirectionChange={isMultiplayer ? changeMultiplayerDirection : handleMobileDirectionChange}
+                  gameRunning={isMultiplayer ? gameState.gameRunning : gameRunning}
+                  currentDirection={isMultiplayer ? (gameState.players[playerId]?.direction || { x: 0, y: -1 }) : direction}
+                  onStartGame={isMultiplayer ? startMultiplayerGame : startGame}
                 />
               </CardContent>
             </Card>
