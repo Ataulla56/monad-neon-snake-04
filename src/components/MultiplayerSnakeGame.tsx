@@ -1,7 +1,6 @@
 import React, { useEffect, useCallback, useRef } from 'react';
 import { motion } from 'framer-motion';
 import { useMultiplayer } from '@/hooks/useMultiplayer';
-import { useToast } from '@/hooks/use-toast';
 
 interface Position {
   x: number;
@@ -24,7 +23,6 @@ const GRID_SIZE = 20;
 const GAME_SPEED = 150;
 
 export const MultiplayerSnakeGame = ({ roomId, playerId, onScoreUpdate }: MultiplayerSnakeGameProps) => {
-  const { toast } = useToast();
   const { 
     gameState, 
     updatePlayer, 
@@ -34,7 +32,6 @@ export const MultiplayerSnakeGame = ({ roomId, playerId, onScoreUpdate }: Multip
   
   const gameLoopRef = useRef<NodeJS.Timeout | null>(null);
   const lastUpdateRef = useRef<number>(Date.now());
-  const gameEndedRef = useRef<boolean>(false);
 
   const generateRandomPosition = useCallback((): Position => {
     return {
@@ -105,7 +102,6 @@ export const MultiplayerSnakeGame = ({ roomId, playerId, onScoreUpdate }: Multip
       // Check wall collision
       if (head.x < 0 || head.x >= GRID_SIZE || head.y < 0 || head.y >= GRID_SIZE) {
         updatedPlayers[pId] = { ...player, isAlive: false };
-        console.log(`Player ${pId} died: wall collision`);
         return;
       }
       
@@ -163,38 +159,18 @@ export const MultiplayerSnakeGame = ({ roomId, playerId, onScoreUpdate }: Multip
 
     // Check game end conditions
     const alivePlayers = Object.values(updatedPlayers).filter(p => p.isAlive);
-    if (alivePlayers.length <= 1 && !gameEndedRef.current) {
-      gameEndedRef.current = true;
+    if (alivePlayers.length <= 1) {
       updateGameState({ gameRunning: false });
       
       // Winner is the last alive or highest scorer
-      let winner;
       if (alivePlayers.length === 1) {
-        winner = alivePlayers[0];
+        console.log(`Winner: ${alivePlayers[0].id}`);
       } else {
-        winner = Object.values(updatedPlayers).reduce((prev, current) => 
+        const winner = Object.values(updatedPlayers).reduce((prev, current) => 
           prev.score > current.score ? prev : current
         );
+        console.log(`Winner by score: ${winner.id}`);
       }
-      
-      // Show winner notification
-      setTimeout(() => {
-        if (winner.id === playerId) {
-          toast({
-            title: "🏆 YOU WON! 🏆",
-            description: `Congratulations! Final score: ${winner.score}`,
-            className: "border-green-500 bg-green-500/10",
-            duration: 5000
-          });
-        } else {
-          toast({
-            title: "Game Over! 💀",
-            description: `Player ${winner.id.slice(0, 6)} won with score: ${winner.score}`,
-            className: "border-red-500 bg-red-500/10",
-            duration: 5000
-          });
-        }
-      }, 500);
     }
 
     // Update all players and balls
@@ -210,7 +186,6 @@ export const MultiplayerSnakeGame = ({ roomId, playerId, onScoreUpdate }: Multip
   // Game loop
   useEffect(() => {
     if (gameState.gameRunning && isRoomCreator) {
-      gameEndedRef.current = false; // Reset game ended flag when game starts
       gameLoopRef.current = setInterval(moveSnakes, GAME_SPEED);
     } else {
       if (gameLoopRef.current) {
