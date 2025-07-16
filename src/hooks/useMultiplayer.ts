@@ -44,8 +44,18 @@ export const useMultiplayer = (roomId: string | null) => {
   const providerRef = useRef<WebrtcProvider | null>(null);
   const gameStateMapRef = useRef<Y.Map<any> | null>(null);
   const playersMapRef = useRef<Y.Map<any> | null>(null);
+  const initializingRef = useRef<boolean>(false);
+  const currentRoomRef = useRef<string | null>(null);
 
   const initializeMultiplayer = useCallback((roomId: string) => {
+    // Prevent multiple initializations for same room
+    if (initializingRef.current || currentRoomRef.current === roomId) {
+      return () => {};
+    }
+    
+    initializingRef.current = true;
+    currentRoomRef.current = roomId;
+
     // Clean up existing connections first
     if (providerRef.current) {
       providerRef.current.disconnect();
@@ -58,7 +68,7 @@ export const useMultiplayer = (roomId: string | null) => {
     const ydoc = new Y.Doc();
     const provider = new WebrtcProvider(roomId, ydoc, {
       signaling: ['wss://signaling.yjs.dev'],
-      maxConns: 2, // Only allow 2 connections (2 players max)
+      maxConns: 2,
     });
 
     ydocRef.current = ydoc;
@@ -132,8 +142,13 @@ export const useMultiplayer = (roomId: string | null) => {
     // Initial state update
     updateGameState();
 
+    initializingRef.current = false;
+
     return () => {
+      initializingRef.current = false;
+      currentRoomRef.current = null;
       provider.disconnect();
+      provider.destroy();
       ydoc.destroy();
     };
   }, [playerId]);
