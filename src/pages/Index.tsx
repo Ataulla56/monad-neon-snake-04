@@ -59,11 +59,12 @@ const Index = () => {
   // Initialize multiplayer if room in URL
   useEffect(() => {
     const roomFromUrl = searchParams.get('room');
-    if (roomFromUrl) {
+    if (roomFromUrl && roomFromUrl !== currentRoom) {
+      console.log('Joining room from URL:', roomFromUrl);
       setCurrentRoom(roomFromUrl);
       setIsMultiplayer(true);
     }
-  }, [searchParams]);
+  }, [searchParams, currentRoom]);
   
   const { 
     isConnected, 
