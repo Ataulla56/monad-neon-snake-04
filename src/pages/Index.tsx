@@ -55,16 +55,18 @@ const Index = () => {
   const [currentRoom, setCurrentRoom] = useState<string | null>(null);
   const [isMultiplayer, setIsMultiplayer] = useState(false);
   const [playerId] = useState(() => Math.random().toString(36).substr(2, 9));
+  const [showJoinConfirmation, setShowJoinConfirmation] = useState(false);
+  const [autoStartCountdown, setAutoStartCountdown] = useState<number | null>(null);
   
   // Initialize multiplayer if room in URL
   useEffect(() => {
     const roomFromUrl = searchParams.get('room');
-    if (roomFromUrl && roomFromUrl !== currentRoom) {
-      console.log('Joining room from URL:', roomFromUrl);
+    if (roomFromUrl && roomFromUrl !== currentRoom && !isMultiplayer) {
+      console.log('Room found in URL:', roomFromUrl);
+      setShowJoinConfirmation(true);
       setCurrentRoom(roomFromUrl);
-      setIsMultiplayer(true);
     }
-  }, [searchParams, currentRoom]);
+  }, [searchParams, currentRoom, isMultiplayer]);
   
   const { 
     isConnected, 
@@ -375,6 +377,23 @@ const Index = () => {
     setSearchParams({ room: roomId });
   };
 
+  const handleConfirmJoin = () => {
+    setShowJoinConfirmation(false);
+    setIsMultiplayer(true);
+    toast({
+      title: "Joining Room! 🎮",
+      description: "Connecting to multiplayer game...",
+      className: "border-green-500 bg-green-500/10"
+    });
+  };
+
+  const handleCancelJoin = () => {
+    setShowJoinConfirmation(false);
+    setCurrentRoom(null);
+    setSearchParams({});
+    window.location.href = window.location.origin;
+  };
+
   const handleScoreUpdate = (playerId: string, score: number) => {
     // Handle score updates for multiplayer
     if (playerId === playerId) {
@@ -390,6 +409,31 @@ const Index = () => {
     setShowFirstTimeHint(false);
     localStorage.setItem('hasSeenArrowHint', 'true');
   };
+
+  // Auto-start countdown when 2 players connected
+  useEffect(() => {
+    if (isMultiplayer && Object.keys(gameState.players).length === 2 && !gameState.gameRunning && isRoomCreator) {
+      setAutoStartCountdown(3);
+      const countdownInterval = setInterval(() => {
+        setAutoStartCountdown(prev => {
+          if (prev === null) return null;
+          if (prev <= 1) {
+            clearInterval(countdownInterval);
+            startMultiplayerGame();
+            toast({
+              title: "Game Started! 🚀",
+              description: "Battle of the snakes begins!",
+              className: "border-green-500 bg-green-500/10"
+            });
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+
+      return () => clearInterval(countdownInterval);
+    }
+  }, [gameState.players, gameState.gameRunning, isRoomCreator, isMultiplayer, startMultiplayerGame, toast]);
 
   // Auto-dismiss hint when game starts
   useEffect(() => {
@@ -469,6 +513,10 @@ const Index = () => {
               onStartGame={startMultiplayerGame}
               isRoomCreator={isRoomCreator}
               roomFull={gameState.roomFull}
+              showJoinConfirmation={showJoinConfirmation}
+              onConfirmJoin={handleConfirmJoin}
+              onCancelJoin={handleCancelJoin}
+              autoStartCountdown={autoStartCountdown}
             />
 
             {/* Wallet Panel */}

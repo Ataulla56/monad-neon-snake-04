@@ -15,6 +15,10 @@ interface RoomManagerProps {
   onStartGame: () => void;
   isRoomCreator: boolean;
   roomFull: boolean;
+  showJoinConfirmation: boolean;
+  onConfirmJoin: () => void;
+  onCancelJoin: () => void;
+  autoStartCountdown: number | null;
 }
 
 const RoomManager = ({ 
@@ -26,7 +30,11 @@ const RoomManager = ({
   canStartGame,
   onStartGame,
   isRoomCreator,
-  roomFull
+  roomFull,
+  showJoinConfirmation,
+  onConfirmJoin,
+  onCancelJoin,
+  autoStartCountdown
 }: RoomManagerProps) => {
   const { toast } = useToast();
   const [showJoinInput, setShowJoinInput] = useState(false);
@@ -63,6 +71,47 @@ const RoomManager = ({
       });
     }
   };
+
+  // Join confirmation modal
+  if (showJoinConfirmation) {
+    return (
+      <>
+        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center">
+          <Card className="bg-gradient-to-br from-purple-900 via-black to-indigo-900 border-2 border-purple-500 max-w-md mx-4">
+            <CardHeader>
+              <CardTitle className="text-center text-purple-300">
+                Join Multiplayer Room?
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="text-center space-y-4">
+              <p className="text-gray-300">
+                You're about to join a multiplayer snake game!
+              </p>
+              <p className="text-sm text-gray-400">
+                Room: {currentRoom?.slice(0, 8)}...
+              </p>
+              <div className="flex gap-3">
+                <Button 
+                  onClick={onConfirmJoin}
+                  className="flex-1 bg-green-600 hover:bg-green-700"
+                >
+                  <UserPlus className="w-4 h-4 mr-2" />
+                  Join Game
+                </Button>
+                <Button 
+                  onClick={onCancelJoin}
+                  variant="outline"
+                  className="flex-1 border-gray-500"
+                >
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </>
+    );
+  }
 
   if (roomFull) {
     return (
@@ -186,7 +235,14 @@ const RoomManager = ({
           </Button>
         )}
 
-        {playerCount === 2 && isRoomCreator && (
+        {autoStartCountdown !== null && (
+          <div className="text-center p-4 bg-green-900/30 border border-green-500/50 rounded">
+            <p className="text-2xl font-bold text-green-300 mb-2">{autoStartCountdown}</p>
+            <p className="text-green-400 text-sm">Game starting soon...</p>
+          </div>
+        )}
+
+        {playerCount === 2 && isRoomCreator && autoStartCountdown === null && (
           <Button 
             onClick={onStartGame}
             disabled={!canStartGame}
@@ -197,7 +253,7 @@ const RoomManager = ({
           </Button>
         )}
 
-        {playerCount === 2 && !isRoomCreator && (
+        {playerCount === 2 && !isRoomCreator && autoStartCountdown === null && (
           <div className="text-center p-3 bg-yellow-900/30 border border-yellow-500/50 rounded">
             <p className="text-yellow-300">Waiting for host to start...</p>
           </div>

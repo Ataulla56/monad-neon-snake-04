@@ -46,6 +46,11 @@ export const useMultiplayer = (roomId: string | null) => {
   const playersMapRef = useRef<Y.Map<any> | null>(null);
 
   const initializeMultiplayer = useCallback((roomId: string) => {
+    // Clean up existing connections first
+    if (providerRef.current) {
+      providerRef.current.disconnect();
+      providerRef.current.destroy();
+    }
     if (ydocRef.current) {
       ydocRef.current.destroy();
     }
